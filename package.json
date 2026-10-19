@@ -1,0 +1,49 @@
+{
+  "name": "vocab-practice",
+  "private": true,
+  "version": "0.7.4",
+  "type": "module",
+  "scripts": {
+    "check:runtime": "node scripts/check-mobile-runtime.mjs",
+    "update:runtime-lock": "node scripts/update-mobile-runtime-lock.mjs",
+    "test:runtime": "playwright test",
+    "test:sites": "node --test tests/sites-worker.test.mjs",
+    "predev": "npm run check:runtime",
+    "dev": "vite",
+    "prebuild": "npm run check:runtime",
+    "build": "tsc && tsc -p tsconfig.server.json && vite build && node scripts/prepare-sites-build.mjs && node scripts/build-offline.mjs && node scripts/build-standalone.mjs",
+    "preview": "vite preview --host 127.0.0.1 --port 4174 --strictPort",
+    "test": "node --experimental-strip-types --test tests/study.test.ts tests/sync.test.ts tests/cloud.test.ts tests/network.test.ts tests/updates.test.ts tests/session.test.ts",
+    "db:migrate": "node --env-file=.env.local --experimental-strip-types scripts/migrate.ts",
+    "dev:cloud": "node --env-file=.env.local --experimental-strip-types scripts/dev-cloud.mjs",
+    "test:cloud": "node --env-file=.env.local --experimental-strip-types scripts/test-cloud.ts",
+    "account:reset": "node --env-file=.env.local --experimental-strip-types scripts/reset-password.ts"
+  },
+  "dependencies": {
+    "@fontsource/barlow-condensed": "^5.3.0",
+    "@fontsource/roboto": "5.2.10",
+    "@phosphor-icons/react": "^2.1.10",
+    "@radix-ui/react-dialog": "1.1.19",
+    "@radix-ui/react-dropdown-menu": "2.1.20",
+    "@radix-ui/react-icons": "1.3.2",
+    "@use-gesture/react": "10.3.1",
+    "better-auth": "^1.7.10",
+    "motion": "12.42.2",
+    "pg": "^8.23.1",
+    "react": "19.2.7",
+    "react-dom": "19.2.7"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.61.1",
+    "@types/node": "^26.6.5",
+    "@types/pg": "^8.23.1",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.3",
+    "prettier": "^3.9.10",
+    "sharp": "^0.35.5",
+    "typescript": "7.0.2",
+    "vite": "8.1.3",
+    "workbox-build": "^7.4.1"
+  }
+}

@@ -1,0 +1,19 @@
+node_modules/
+dist/
+test-results/
+playwright-report/
+.vercel/
+.env*
+.vercel
+.env*.local
+
+# Local tooling and generated artifacts
+.DS_Store
+.claude/
+.agents/
+.codex/
+.aws/
+*.log
+qa/
+拾词-离线版.html
+百万背单词-离线版.html

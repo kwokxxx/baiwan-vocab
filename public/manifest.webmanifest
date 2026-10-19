@@ -1,0 +1,25 @@
+{
+  "name": "百万背单词",
+  "short_name": "百万背单词",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#bbf6ea",
+  "theme_color": "#bbf6ea",
+  "lang": "zh-CN",
+  "icons": [
+    {
+      "src": "/assets/app/baiwan-cat-192-v1.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/app/baiwan-cat-512-v1.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "id": "/"
+}
