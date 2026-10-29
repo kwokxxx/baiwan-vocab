@@ -15,38 +15,3 @@ export function playStudyAudio(
   }
   speak(text);
 }
-
-// The web API exposes voice names, not gender. Prefer established English female
-// voices when installed, and let the user audition/select the device's own voices.
-export function chooseVoice<
-  T extends Pick<
-    SpeechSynthesisVoice,
-    "name" | "lang" | "voiceURI" | "localService"
-  >,
->(voices: T[], preferred = "") {
-  const english = voices.filter((v) => /^en(?:[-_]|$)/i.test(v.lang));
-  const selected = english.find((v) => v.voiceURI === preferred);
-  if (selected) return selected;
-  const names = [
-    "Samantha",
-    "Serena",
-    "Karen",
-    "Moira",
-    "Tessa",
-    "Ava",
-    "Allison",
-    "Susan",
-    "Victoria",
-    "Zira",
-    "Jenny",
-    "Aria",
-    "Sonia",
-  ];
-  for (const name of names) {
-    const voice = english.find((v) =>
-      new RegExp(`\\b${name}\\b`, "i").test(v.name),
-    );
-    if (voice) return voice;
-  }
-  return english.find((v) => /female|女/i.test(v.name));
-}

@@ -1,0 +1,5 @@
+English audio generated with Kokoro-82M (Apache-2.0 licensed model).
+Model: https://huggingface.co/hexgrad/Kokoro-82M
+MLX conversion: https://huggingface.co/mlx-community/Kokoro-82M-bf16
+Voices: af_heart (female), am_michael (male), speed 0.95.
+These are AI-generated voices, not recordings of a human narrator.

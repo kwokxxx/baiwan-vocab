@@ -1,7 +1,7 @@
 {
   "name": "vocab-practice",
   "private": true,
-  "version": "0.7.4",
+  "version": "0.9.0",
   "type": "module",
   "scripts": {
     "check:runtime": "node scripts/check-mobile-runtime.mjs",
@@ -10,10 +10,11 @@
     "test:sites": "node --test tests/sites-worker.test.mjs",
     "predev": "npm run check:runtime",
     "dev": "vite",
-    "prebuild": "npm run check:runtime",
+    "prebuild": "npm run check:runtime && npm run check:audio",
+    "check:audio": "node --experimental-strip-types scripts/check-audio.ts",
     "build": "tsc && tsc -p tsconfig.server.json && vite build && node scripts/prepare-sites-build.mjs && node scripts/build-offline.mjs && node scripts/build-standalone.mjs",
     "preview": "vite preview --host 127.0.0.1 --port 4174 --strictPort",
-    "test": "node --experimental-strip-types --test tests/study.test.ts tests/sync.test.ts tests/cloud.test.ts tests/network.test.ts tests/updates.test.ts tests/session.test.ts",
+    "test": "node --experimental-strip-types --test tests/study.test.ts tests/sync.test.ts tests/cloud.test.ts tests/network.test.ts tests/updates.test.ts tests/session.test.ts tests/catalog.test.ts tests/audio.test.ts",
     "db:migrate": "node --env-file=.env.local --experimental-strip-types scripts/migrate.ts",
     "dev:cloud": "node --env-file=.env.local --experimental-strip-types scripts/dev-cloud.mjs",
     "test:cloud": "node --env-file=.env.local --experimental-strip-types scripts/test-cloud.ts",

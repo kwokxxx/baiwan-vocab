@@ -24,6 +24,18 @@ const result = await generateSW({
   directoryIndex: null,
   runtimeCaching: [
     {
+      urlPattern: ({ url }) =>
+        url.origin === self.location.origin &&
+        url.pathname.startsWith("/audio/") &&
+        !url.searchParams.has("full"),
+      handler: "CacheFirst",
+      options: {
+        cacheName: "baiwan-natural-audio-v1",
+        rangeRequests: true,
+        cacheableResponse: { statuses: [200] },
+      },
+    },
+    {
       urlPattern: ({ request, url }) =>
         request.mode === "navigate" &&
         url.origin === self.location.origin &&

@@ -12,7 +12,7 @@ import { mergeImport, mergeStudyData, same } from "./sync.ts";
 import { SEED_ENTRIES } from "./entries.ts";
 import { LEGACY_ENTRIES } from "./legacyEntries.ts";
 import { CATALOG_VERSION } from "./libraryVersion.ts";
-import { migrateCatalog, withBundledExamples } from "./catalog.ts";
+import { migrateCatalog, withLibraryAdditions } from "./catalog.ts";
 import {
   requestJson,
   InvalidResponseError,
@@ -158,7 +158,10 @@ export class StudyStore {
     );
   fullSnapshot = (): StudyData => ({
     ...this.state.data,
-    library: withBundledExamples(this.state.data.library ?? this.state.library),
+    library: withLibraryAdditions(
+      this.state.data.library ?? this.state.library,
+      this.state.data.customEntries,
+    ),
   });
   private persist() {
     if (this.state.storageError) return false;
@@ -469,7 +472,7 @@ export class StudyStore {
         id: `custom-check-${i}`,
       })),
     });
-    return withBundledExamples(entries);
+    return withLibraryAdditions(entries);
   }
   refreshLibrary = async () => {
     if (!this.available) return;

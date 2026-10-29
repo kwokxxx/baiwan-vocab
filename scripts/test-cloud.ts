@@ -71,6 +71,18 @@ try {
   assert.deepEqual(health.value, { server: "ok", database: "ok" });
   const library = await anonymous("library");
   assert.equal(library.status, 200);
+  const storedLibrary = await db.query(
+    "SELECT entry FROM shared_entries ORDER BY position, id",
+  );
+  assert.deepEqual(
+    storedLibrary.rows.map((row) => row.entry),
+    SEED_ENTRIES,
+  );
+  const beforeImport = await db.query(
+    "SELECT entries FROM catalog_archives WHERE catalog_version=$1",
+    [`${CATALOG_VERSION}:before-51133-v1`],
+  );
+  assert.deepEqual(beforeImport.rows[0]?.entries, SEED_ENTRIES.slice(0, 121));
   assert.equal(library.value.entries.length, SEED_ENTRIES.length);
   assert(
     library.value.entries.every(

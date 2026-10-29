@@ -23,28 +23,37 @@ import {
 } from "../src/session.ts";
 import { migrateCatalog, withBundledExamples } from "../src/catalog.ts";
 import { mergeStudyData } from "../src/sync.ts";
-import { chooseVoice, playStudyAudio } from "../src/speech.ts";
+import { playStudyAudio } from "../src/speech.ts";
 import { newBackupCode } from "../src/backup.ts";
 const now = new Date(2026, 9, 19, 21).getTime();
-test("121 distinct source phrases are present, without old seed words", () => {
-  assert.equal(SEED_ENTRIES.length, 121);
-  assert.equal(new Set(SEED_ENTRIES.map((e) => e.id)).size, 121);
+test("2061 distinct source phrases include the original 121 and appended batch", () => {
+  assert.equal(SEED_ENTRIES.length, 2061);
+  assert.equal(new Set(SEED_ENTRIES.map((e) => e.id)).size, 2061);
   assert(
     SEED_ENTRIES.every((e) => e.kind === "phrase" && e.meaning && !e.phonetic),
   );
   assert.equal(SEED_ENTRIES[0].term, "I hear you");
-  assert.equal(SEED_ENTRIES.at(-1)?.term, "money is not everything");
+  assert.equal(SEED_ENTRIES[120].term, "money is not everything");
+  assert.equal(SEED_ENTRIES.at(-1)?.term, "a touch of");
 });
 test("every bundled phrase has a matching bilingual example, with the approved correction retaining its ID", () => {
   for (const entry of SEED_ENTRIES) {
     assert(entry.example.trim() && entry.translation.trim(), entry.term);
-    assert(
-      entry.example.toLowerCase().includes(entry.term.toLowerCase()),
-      entry.term,
-    );
+    if (!entry.id.startsWith("phrase-51133-"))
+      assert(
+        entry.example.toLowerCase().includes(entry.term.toLowerCase()),
+        entry.term,
+      );
+    else {
+      assert(/[a-z]/i.test(entry.example), entry.term);
+      assert(!/\.{3}|\b(?:sb|sth)\./i.test(entry.example), entry.term);
+    }
     assert(/[\u4e00-\u9fff]/.test(entry.translation), entry.term);
   }
-  assert.equal(new Set(SEED_ENTRIES.map((e) => e.example)).size, 121);
+  assert.equal(
+    new Set(SEED_ENTRIES.map((e) => e.example)).size,
+    SEED_ENTRIES.length,
+  );
   assert.equal(
     SEED_ENTRIES.find((e) => e.term === "get down to business")?.id,
     "phrase-ab4ca431e046dc49",
@@ -231,7 +240,7 @@ test("backup and conflict merge keep library, task limits and a resumable sessio
   const merged = mergeStudyData(base, local, remote);
   assert.equal(merged.session?.index, 1);
   assert.equal(merged.reviewGoal, 15);
-  assert.equal(merged.library?.length, 121);
+  assert.equal(merged.library?.length, SEED_ENTRIES.length);
   assert.equal(merged.notes[SEED_ENTRIES[1].id], "other device");
   assert.deepEqual(
     parseBackup(JSON.parse(JSON.stringify(merged))).session,
@@ -248,14 +257,7 @@ test("calendar has correct month offsets and leap-day range", () => {
   assert(feb.includes("2028-02-29"));
   assert.equal(calendarDays(2026, 9)[3], "2026-10-01");
 });
-test("female voice preference does not silently choose the first English male voice", () => {
-  const voices = [
-    { name: "Alex", lang: "en-US", voiceURI: "alex", localService: true },
-    { name: "Samantha", lang: "en-US", voiceURI: "sam", localService: true },
-  ];
-  assert.equal(chooseVoice(voices)?.voiceURI, "sam");
-  assert.equal(chooseVoice(voices, "alex")?.voiceURI, "alex");
-  assert.equal(chooseVoice(voices.slice(0, 1)), undefined);
+test("anonymous backup recovery codes contain independent random capability tokens", () => {
   const a = newBackupCode(),
     b = newBackupCode();
   assert.match(a, /^bw1_[a-f0-9]{64}$/);

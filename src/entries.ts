@@ -1,3 +1,4 @@
+import { PHRASES_51133 } from "./data/phrases51133.ts";
 import type { Entry } from "./study.ts";
 
 // Original everyday-context learning examples and Chinese translations.
@@ -1702,4 +1703,5 @@ export const SEED_ENTRIES: Entry[] = [
     related: [],
     source: "49855 · 第 255 页",
   },
+  ...PHRASES_51133,
 ];

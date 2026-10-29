@@ -56,8 +56,18 @@ import {
   estimatedFinish,
 } from "./session";
 import { cloudBackup, newBackupCode } from "./backup";
-import { chooseVoice, playStudyAudio } from "./speech";
-import { withBundledExamples } from "./catalog";
+import { playStudyAudio } from "./speech";
+import {
+  RecordingPlayer,
+  recordingUrl,
+  recordingUrls,
+  voiceMode,
+  selectNaturalVoice,
+  cacheRecording,
+  cacheRecordings,
+} from "./recordedAudio";
+import { withLibraryAdditions } from "./catalog";
+import { highlightParts } from "./highlight";
 import { UpdateChecker, recoveryUrl } from "./updates";
 import {
   withDeadline,
@@ -98,32 +108,17 @@ type Sheet =
   | "voice"
   | null;
 function Highlight({ text, entry }: { text: string; entry: Entry }) {
-  const tokens =
-    entry.kind === "word"
-      ? [
-          entry.term,
-          entry.term + "d",
-          entry.term.endsWith("e")
-            ? entry.term.slice(0, -1) + "ing"
-            : entry.term + "ing",
-        ]
-      : [entry.term];
-  const escaped = tokens
-    .sort((a, b) => b.length - a.length)
-    .map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
   return (
     <>
-      {text
-        .split(new RegExp(`(\\b(?:${escaped.join("|")})\\b)`, "gi"))
-        .map((part, i) =>
-          tokens.some((t) => t.toLowerCase() === part.toLowerCase()) ? (
-            <strong className="highlight-word" key={i}>
-              {part}
-            </strong>
-          ) : (
-            part
-          ),
-        )}
+      {highlightParts(text, entry).map((part, i) =>
+        part.highlighted ? (
+          <strong className="highlight-word" key={i}>
+            {part.text}
+          </strong>
+        ) : (
+          part.text
+        ),
+      )}
     </>
   );
 }
@@ -166,7 +161,10 @@ export default function Prototype() {
     () =>
       visibleEntries(
         [
-          ...withBundledExamples(data.library ?? cloud.library),
+          ...withLibraryAdditions(
+            data.library ?? cloud.library,
+            data.customEntries,
+          ),
           ...data.customEntries,
         ],
         data,
@@ -206,9 +204,11 @@ export default function Prototype() {
     () => new Date(new Date().getFullYear(), new Date().getMonth(), 1),
   );
   const [selectedDay, setSelectedDay] = useState(localDay(Date.now()));
-  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [speakingText, setSpeakingText] = useState("");
-  const speechSequence = useRef(0);
+  const playerRef = useRef<RecordingPlayer | null>(null);
+  const audioDownloadRef = useRef<AbortController | null>(null);
+  const [audioDownloading, setAudioDownloading] = useState(false);
+  const [audioDownloadMessage, setAudioDownloadMessage] = useState("");
   const [backupBusy, setBackupBusy] = useState(false);
   const [backupMessage, setBackupMessage] = useState("");
   const [backupCode, setBackupCode] = useState("");
@@ -242,9 +242,11 @@ export default function Prototype() {
   const [browseId, setBrowseId] = useState<string | null>(null);
   const [sheet, setSheet] = useState<Sheet>(null);
   const [query, setQuery] = useState("");
+  const [libraryVisible, setLibraryVisible] = useState(120);
   const [filter, setFilter] = useState<"all" | "word" | "phrase" | "favorite">(
     "all",
   );
+  useEffect(() => setLibraryVisible(120), [query, filter]);
   const [detailTab, setDetailTab] = useState<"meaning" | "related">("meaning");
   const [note, setNote] = useState("");
   const [toast, setToast] = useState("");
@@ -416,6 +418,7 @@ export default function Prototype() {
   }
   function openSheet(next: Sheet) {
     keyboard.hide();
+    stopSpeech();
     if (next === "plan") {
       setNewGoal(dataRef.current.dailyGoal);
       setReviewGoal(
@@ -562,9 +565,8 @@ export default function Prototype() {
     if (value === "easy") setToast("已暂停该词复习，可在词库中恢复");
   }
   function stopSpeech() {
-    speechSequence.current++;
     setSpeakingText("");
-    if ("speechSynthesis" in window) speechSynthesis.cancel();
+    playerRef.current?.stop();
   }
   function autoRead(
     entry: Entry | undefined,
@@ -573,35 +575,72 @@ export default function Prototype() {
     playStudyAudio(entry, phase, dataRef.current.autoSpeak, speak, stopSpeech);
   }
   function speak(text: string) {
-    if (!("speechSynthesis" in window)) return setToast("当前浏览器不支持朗读");
     stopSpeech();
-    const voice = chooseVoice(
-      speechSynthesis.getVoices(),
-      dataRef.current.voiceURI,
+    const voice = selectNaturalVoice(voiceMode(dataRef.current.voiceURI));
+    const url = recordingUrl(text, voice);
+    if (!url) return setToast("这条内容还没有自然语音，仍可正常学习和记录进度");
+    playerRef.current ??= new RecordingPlayer(new Audio());
+    playerRef.current.play(url, {
+      start: () => setSpeakingText(text),
+      end: () => setSpeakingText(""),
+      error: (message) => {
+        setSpeakingText("");
+        setToast(message);
+      },
+    });
+    for (const candidate of recordingUrls([text]))
+      if (candidate.startsWith("/"))
+        void cacheRecording(candidate).catch(() => {});
+  }
+  async function downloadAudio(all: boolean) {
+    if (audioDownloadRef.current) {
+      audioDownloadRef.current.abort();
+      setAudioDownloadMessage("已暂停，下载过的语音仍会保留");
+      return;
+    }
+    const controller = new AbortController();
+    audioDownloadRef.current = controller;
+    setAudioDownloading(true);
+    const today = new Set(
+      taskQueue(entries, dataRef.current, "all", Date.now()),
     );
-    if (!voice)
-      return setToast(
-        "未找到英语女声，请在朗读设置中选择语音，或在 iPhone 设置中下载 Samantha 英语语音",
+    for (const session of [
+      dataRef.current.session,
+      ...Object.values(dataRef.current.sessionSlots ?? {}),
+    ])
+      if (session?.day === localDay(Date.now()))
+        for (const id of [...session.round, ...session.pending]) today.add(id);
+    const selected = all
+      ? entries
+      : entries.filter((entry) => today.has(entry.id));
+    const urls = recordingUrls(
+      selected.flatMap((entry) => [entry.term, entry.example]),
+    );
+    try {
+      if (!urls.length) {
+        setAudioDownloadMessage("今天暂时没有待下载的学习语音");
+        return;
+      }
+      await cacheRecordings(
+        urls,
+        (done, total) =>
+          setAudioDownloadMessage(`正在保存 ${done} / ${total} 段语音`),
+        controller.signal,
       );
-    const sequence = speechSequence.current;
-    const u = new SpeechSynthesisUtterance(text);
-    u.voice = voice;
-    u.lang = voice.lang;
-    u.rate = 0.88;
-    u.pitch = 1;
-    u.onstart = () => {
-      if (sequence === speechSequence.current) setSpeakingText(text);
-    };
-    u.onend = () => {
-      if (sequence === speechSequence.current) setSpeakingText("");
-    };
-    u.onerror = (e) => {
-      if (sequence !== speechSequence.current) return;
-      setSpeakingText("");
-      if (!["canceled", "interrupted"].includes(e.error))
-        setToast("朗读未能播放，请点喇叭重试");
-    };
-    speechSynthesis.speak(u);
+      setAudioDownloadMessage(`已保存 ${urls.length} 段语音，可离线播放`);
+    } catch (error) {
+      const cancelled = controller.signal.aborted;
+      controller.abort();
+      if (cancelled) setAudioDownloadMessage("已暂停，下载过的语音仍会保留");
+      else
+        setAudioDownloadMessage(
+          error instanceof Error ? error.message : "下载暂未完成，请联网后重试",
+        );
+    } finally {
+      if (audioDownloadRef.current === controller)
+        audioDownloadRef.current = null;
+      setAudioDownloading(false);
+    }
   }
   function downloadSnapshot(raw: string, name: string) {
     const url = URL.createObjectURL(
@@ -780,18 +819,9 @@ export default function Prototype() {
     return () => clearInterval(t);
   }, [screen, !!current, browseId]);
   useEffect(() => {
-    if (!("speechSynthesis" in window)) return;
-    const refresh = () =>
-      setVoices(
-        speechSynthesis
-          .getVoices()
-          .filter((v) => /^en(?:[-_]|$)/i.test(v.lang)),
-      );
-    refresh();
-    speechSynthesis.addEventListener("voiceschanged", refresh);
     return () => {
-      speechSynthesis.cancel();
-      speechSynthesis.removeEventListener("voiceschanged", refresh);
+      playerRef.current?.stop();
+      audioDownloadRef.current?.abort();
     };
   }, []);
   function requestWorkerUpdate() {
@@ -1238,7 +1268,11 @@ export default function Prototype() {
             {icon(
               browseId ? "返回词库" : "返回学习首页",
               <ArrowLeftIcon size={24} weight="light" />,
-              () => (browseId ? setBrowseId(null) : navigate("home")),
+              () => {
+                stopSpeech();
+                if (browseId) setBrowseId(null);
+                else navigate("home");
+              },
             )}
             <div className="toolbar-actions">
               {icon(
@@ -1382,10 +1416,12 @@ export default function Prototype() {
                       {current.term}
                     </h1>
                     {icon(
-                      "朗读词条",
+                      speakingText === current.term
+                        ? "正在朗读词条，点击重听"
+                        : "朗读词条",
                       <SpeakerHighIcon size={24} weight="fill" />,
                       () => speak(current.term),
-                      "audio-button",
+                      `audio-button${speakingText === current.term ? " is-playing" : ""}`,
                     )}
                   </div>
                   <div className="detail-meta">
@@ -1654,10 +1690,12 @@ export default function Prototype() {
                 <div className="pronunciation">
                   <span>{current.phonetic || "听一听，试着完整回忆"}</span>
                   {icon(
-                    "朗读词条",
+                    speakingText === current.term
+                      ? "正在朗读词条，点击重听"
+                      : "朗读词条",
                     <SpeakerHighIcon size={24} weight="fill" />,
                     () => speak(current.term),
-                    "audio-button",
+                    `audio-button${speakingText === current.term ? " is-playing" : ""}`,
                   )}
                 </div>
                 <button className="easy-button" onClick={() => commit("easy")}>
@@ -1967,7 +2005,7 @@ export default function Prototype() {
                     {filtered.length} 个词条 · 点击查看释义 · 左滑删除
                   </p>
                   <div className="entry-list">
-                    {filtered.map((entry) => (
+                    {filtered.slice(0, libraryVisible).map((entry) => (
                       <Carousel
                         key={entry.id}
                         className="entry-swipe"
@@ -2022,6 +2060,14 @@ export default function Prototype() {
                       </Carousel>
                     ))}
                   </div>
+                  {filtered.length > libraryVisible && (
+                    <button
+                      className="library-more"
+                      onClick={() => setLibraryVisible((count) => count + 120)}
+                    >
+                      加载更多 · 还有 {filtered.length - libraryVisible} 个词条
+                    </button>
+                  )}
                   {!filtered.length && (
                     <div className="empty-state">
                       <BookOpenIcon size={36} weight="light" />
@@ -2230,7 +2276,12 @@ export default function Prototype() {
       )}
       <BottomSheet
         open={sheet === "voice"}
-        onOpenChange={(open) => !open && setSheet(null)}
+        onOpenChange={(open) => {
+          if (!open) {
+            stopSpeech();
+            setSheet(null);
+          }
+        }}
         title="朗读设置"
         description="背诵时读词条，查看释义时读例句，各播放一次"
         snap={0.68}
@@ -2241,43 +2292,66 @@ export default function Prototype() {
             <input
               type="checkbox"
               checked={data.autoSpeak !== false}
-              onChange={(e) =>
-                save({ ...dataRef.current, autoSpeak: e.target.checked })
-              }
+              onChange={(e) => {
+                if (!e.target.checked) stopSpeech();
+                save({ ...dataRef.current, autoSpeak: e.target.checked });
+              }}
             />
           </label>
           <label className="voice-picker">
             英语声音
             <select
               aria-label="英语声音"
-              value={data.voiceURI ?? ""}
-              onChange={(e) =>
-                save({ ...dataRef.current, voiceURI: e.target.value })
-              }
+              value={`natural:${voiceMode(data.voiceURI)}`}
+              onChange={(e) => {
+                stopSpeech();
+                save({ ...dataRef.current, voiceURI: e.target.value });
+              }}
             >
-              <option value="">
-                自动选择女声
-                {chooseVoice(voices)?.name
-                  ? ` · ${chooseVoice(voices)!.name}`
-                  : "（需下载英语语音）"}
-              </option>
-              {voices.map((v) => (
-                <option key={v.voiceURI} value={v.voiceURI}>
-                  {v.name} · {v.lang}
-                </option>
-              ))}
+              <option value="natural:random">自然男女声 · 随机播放</option>
+              <option value="natural:female">自然女声 · Heart</option>
+              <option value="natural:male">自然男声 · Michael</option>
             </select>
           </label>
           <p>
-            优先使用 Samantha
-            等英语女声，语速稍慢。系统没有可用女声时，请先下载英语语音，或在这里选择并试听。
+            美式英语自然 AI
+            配音。随机模式下，每段朗读随机选择男声或女声；整段使用同一个声音。
           </p>
           <button
             className="primary-button"
-            onClick={() => speak("I hear you. Keep up the good work.")}
+            onClick={() =>
+              speak("I hear you, but we still need to finish this today.")
+            }
           >
-            试听声音
+            {speakingText ===
+            "I hear you, but we still need to finish this today."
+              ? "正在播放…"
+              : "试听声音"}
           </button>
+          <p>
+            已提供公共词库的词条和例句音频。自建内容需要另补自然语音。听过的音频会尝试缓存，也可以提前下载。
+          </p>
+          {globalThis.__BAIWAN_EMBEDDED_AUDIO__ ? (
+            <p>完整语音包已包含在此离线文件中。</p>
+          ) : (
+            <>
+              <button
+                className="quiet-button"
+                onClick={() => void downloadAudio(false)}
+              >
+                {audioDownloading ? "暂停下载" : "保存今日语音"}
+              </button>
+              {!audioDownloading && (
+                <button
+                  className="quiet-button"
+                  onClick={() => void downloadAudio(true)}
+                >
+                  保存全部语音（建议使用 Wi-Fi）
+                </button>
+              )}
+            </>
+          )}
+          {audioDownloadMessage && <p role="status">{audioDownloadMessage}</p>}
         </div>
       </BottomSheet>
       <BottomSheet

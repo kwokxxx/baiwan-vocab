@@ -7,6 +7,7 @@ const mime = {
   ".woff": "font/woff",
   ".woff2": "font/woff2",
   ".jpg": "image/jpeg",
+  ".mp3": "audio/mpeg",
 };
 async function dataUrl(file) {
   return `data:${mime[path.extname(file)] ?? "application/octet-stream"};base64,${(await readFile(file)).toString("base64")}`;
@@ -35,6 +36,13 @@ for (const file of await walk(path.join(root, "assets"))) {
   css = css.split(url).join(embedded);
   css = css.split("./" + path.basename(file)).join(embedded);
 }
+const embeddedAudio = {};
+for (const file of await walk(path.join(root, "audio"))) {
+  if (path.extname(file) !== ".mp3") continue;
+  embeddedAudio["/" + path.relative(root, file).split(path.sep).join("/")] =
+    await dataUrl(file);
+}
+script = `globalThis.__BAIWAN_EMBEDDED_AUDIO__=${JSON.stringify(embeddedAudio)};\n${script}`;
 html = html.replace(
   /<script[^>]*src="[^"]+"[^>]*><\/script>/,
   () =>
